@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Doficoin Fighter Pro</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
+        canvas { display: block; }
+        
+        /* --- MENU SYSTEM --- */
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; z-index: 1000; background: rgba(0,0,0,0.95); }
+        #home-menu { flex-direction: row; justify-content: space-between; align-items: center; padding: 20px; box-sizing: border-box; }
+        
+        .sidebar { width: 28%; height: 90%; background: #111; border: 1px solid #333; border-radius: 15px; padding: 15px; overflow-y: auto; box-sizing: border-box; }
+        .center-stage { width: 40%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        
+        /* Character Display */
+        #char-preview { width: 70px; height: 70px; border-radius: 50%; border: 3px solid #00E5FF; margin-bottom: 15px; transition: 0.3s; }
+        
+        .item-btn { width: 100%; padding: 12px; margin: 8px 0; background: #222; border: 1px solid #444; color: #fff; border-radius: 8px; cursor: pointer; font-size: 11px; text-align: left; }
+        .item-btn:active { background: #00E5FF; color: #000; }
+        .locked { opacity: 0.5; cursor: not-allowed; }
+
+        /* Game UI */
+        #ui-layer { position: absolute; top: 15px; left: 15px; z-index: 10; pointer-events: none; font-size: 14px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 10px; display: none; }
+        .dofi { color: #FFD700; font-weight: bold; }
+        
+        #bag-header { font-size: 24px; margin-bottom: 10px; display: block; text-align: center; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="home-menu" class="screen">
+        <div class="sidebar">
+            <h3 style="color:#00E5FF">SHOP</h3>
+            <p class="dofi">DOFI: <span id="menu-dofi">0.00</span></p>
+            <small>WEAPONS</small>
+            <button class="item-btn" onclick="buyItem('weapon', 'Pistol', 100)">🔫 Pistol (100)</button>
+            <button class="item-btn" onclick="buyItem('weapon', 'Rifle', 300)">🧬 Rifle (300)</button>
+            <button class="item-btn" onclick="buyItem('weapon', 'Sniper', 800)">🎯 Sniper (800)</button>
+            <small>SKILLS</small>
+            <button class="item-btn" onclick="buyItem('skill', 'Invis', 150)">👻 Disappear (150)</button>
+        </div>
+
+        <div class="center-stage">
+            <div id="char-preview"></div>
+            <h2 id="rank-display" style="margin:5px 0">NOOB</h2>
+            <div style="width:100px; height:8px; background:#333; border-radius:4px; margin-bottom:15px;">
+                <div id="xp-bar" style="width:0%; height:100%; background:#00E5FF; border-radius:4px;"></div>
+            </div>
+            <p style="font-size:12px">Level: <span id="lvl-num">1</span> / 40</p>
+            <button class="item-btn" style="background:#00E5FF; color:#000; text-align:center; font-weight:bold; font-size:16px;" onclick="startGame()">START MISSION</button>
+        </div>
+
+        <div class="sidebar">
+            <span id="bag-header">🎒</span>
+            <h3 style="color:#FFD700; text-align:center; margin-top:0">EQUIPMENT</h3>
+            <div id="inventory">
+                <p style="font-size:11px">Weapon: <span id="cur-wep" style="color:#00E5FF">Knife</span></p>
+                <p style="font-size:11px">Skill: <span id="cur-skl" style="color:#00E5FF">None</span></p>
+                <small>COLORS</small>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                    <button onclick="setColor('#ff0000')" style="background:red; width:25px; height:25px; border-radius:50%; border:none;"></button>
+                    <button onclick="setColor('#00ff00')" style="background:green; width:25px; height:25px; border-radius:50%; border:none;"></button>
+                    <button onclick="setColor('#00E5FF')" style="background:#00E5FF; width:25px; height:25px; border-radius:50%; border:none;"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        HP: <span id="hpDisplay">❤️❤️❤️</span><br>
+        DOFI: <span id="walletDisplay" class="dofi">0.00</span><br>
+        LEVEL: <span id="gameLvlDisplay">1</span>
+    </div>
+
+    <div id="left-zone" style="position:absolute; bottom:30px; left:30px; width:120px; height:120px; z-index:100;"></div>
+    <div id="right-zone" style="position:absolute; bottom:30px; right:30px; width:80px; height:80px; border:2px solid #00E5FF; border-radius:50%; display:none; align-items:center; justify-content:center; z-index:100; color:#00E5FF; font-weight:bold;">SKILL</div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- DATABASE / STATE ---
+        let state = {
+            dofi: 0,
+            lvl: 1,
+            xp: 0,
+            color: '#00E5FF',
+            weapon: 'Knife',
+            skill: 'None',
+            ownedWeapons: ['Knife'],
+            ownedSkills: ['None']
+        };
+
+        const weaponStats = {
+            'Knife': { rate: 1500, speed: 6, color: '#aaa' },
+            'Pistol': { rate: 600, speed: 10, color: '#fff' },
+            'Rifle': { rate: 250, speed: 12, color: '#00E5FF' },
+            'Sniper': { rate: 2000, speed: 25, color: '#ff0055' }
+        };
+
+        function buyItem(type, name, cost) {
+            if (state.dofi >= cost) {
+                state.dofi -= cost;
+                if (type === 'weapon') { state.weapon = name; state.ownedWeapons.push(name); }
+                if (type === 'skill') { state.skill = name; state.ownedSkills.push(name); }
+                syncMenu();
+            } else { alert("Insufficient Doficoin!"); }
+        }
+
+        function setColor(c) { state.color = c; syncMenu(); }
+
+        function syncMenu() {
+            document.getElementById('menu-dofi').innerText = state.dofi.toFixed(2);
+            document.getElementById('char-preview').style.backgroundColor = state.color;
+            document.getElementById('lvl-num').innerText = state.lvl;
+            document.getElementById('cur-wep').innerText = state.weapon;
+            document.getElementById('cur-skl').innerText = state.skill;
+            
+            let progress = (state.xp / (state.lvl * 100)) * 100;
+            document.getElementById('xp-bar').style.width = progress + "%";
+            
+            const ranks = ["NOOB", "SOLDIER", "ELITE", "MASTER", "LEGENDARY MASTER"];
+            let rankIdx = Math.min(Math.floor(state.lvl / 10), 4);
+            document.getElementById('rank-display').innerText = ranks[rankIdx];
+        }
+
+        // --- GAME ENGINE ---
+        let active = false;
+        let playerObj = { x:0, y:0, vx:0, vy:0, hp:3, invis: false, skillCD: 0 };
+        let enemies = [], bullets = [], eBullets = [], lastShot = 0, lastSpawn = 0;
+
+        function startGame() {
+            active = true;
+            document.getElementById('home-menu').classList.add('hidden');
+            document.getElementById('ui-layer').style.display = 'block';
+            document.getElementById('right-zone').style.display = 'flex';
+            playerObj.x = canvas.width/2; playerObj.y = canvas.height/2;
+            playerObj.hp = 3;
+            loop();
+        }
+
+        function loop() {
+            if(!active) return;
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0,0,canvas.width, canvas.height);
+            const now = Date.now();
+
+            // Player Draw
+            if(!playerObj.invis || now % 300 < 150) {
+                ctx.shadowBlur = 15; ctx.shadowColor = state.color;
+                ctx.fillStyle = state.color;
+                ctx.beginPath(); ctx.arc(playerObj.x, playerObj.y, 14, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            // Movement (Fixed Scaling Bug)
+            playerObj.x = Math.max(15, Math.min(canvas.width-15, playerObj.x + playerObj.vx));
+            playerObj.y = Math.max(15, Math.min(canvas.height-15, playerObj.y + playerObj.vy));
+
+            // Enemy Logic (Fixed Invisibility Bug)
+            if(now - lastSpawn > 1200) {
+                enemies.push({ x: Math.random()*canvas.width, y: -20, lastS: now });
+                lastSpawn = now;
+            }
+
+            enemies.forEach((en, i) => {
+                if(!playerObj.invis) {
+                    let angle = Math.atan2(playerObj.y - en.y, playerObj.x - en.x);
+                    en.x += Math.cos(angle) * 2; en.y += Math.sin(angle) * 2;
+                    if(now - en.lastS > 3000) {
+                        eBullets.push({x: en.x, y: en.y, vx: Math.cos(angle)*4, vy: Math.sin(angle)*4});
+                        en.lastS = now;
+                    }
+                }
+                ctx.fillStyle = '#ff3300';
+                ctx.beginPath(); ctx.arc(en.x, en.y, 10, 0, Math.PI*2); ctx.fill();
+            });
+
+            // Shooting (Weapon Logic)
+            const stats = weaponStats[state.weapon];
+            if(enemies.length > 0 && now - lastShot > stats.rate) {
+                let target = enemies[0];
+                let angle = Math.atan2(target.y - playerObj.y, target.x - playerObj.x);
+                bullets.push({x: playerObj.x, y: playerObj.y, vx: Math.cos(angle)*stats.speed});
+                lastShot = now;
+            }
+
+            // Bullet Cleanup (Fixed Memory Leak)
+            bullets = bullets.filter(b => {
+                b.x += b.vx; 
+                ctx.fillStyle = stats.color; ctx.fillRect(b.x, b.y, 4, 4);
+                let hit = false;
+                enemies.forEach((en, ei) => {
+                    if(Math.hypot(b.x-en.x, b.y-en.y) < 15) {
+                        enemies.splice(ei, 1); hit = true;
+                        state.dofi += 0.5; state.xp += 20;
+                        if(state.xp >= state.lvl * 100) { state.lvl++; state.xp = 0; }
+                    }
+                });
+                return !hit && b.x > 0 && b.x < canvas.width;
+            });
+
+            document.getElementById('walletDisplay').innerText = state.dofi.toFixed(2);
+            document.getElementById('gameLvlDisplay').innerText = state.lvl;
+
+            requestAnimationFrame(loop);
+        }
+
+        // Joystick
+        nipplejs.create({ zone: document.getElementById('left-zone'), mode: 'static', position: {left:'50%', top:'50%'}, color: '#00E5FF' })
+        .on('move', (e,d) => {
+            playerObj.vx = Math.cos(d.angle.radian) * 4;
+            playerObj.vy = -Math.sin(d.angle.radian) * 4;
+        }).on('end', () => { playerObj.vx = 0; playerObj.vy = 0; });
+
+        // Skill Button
+        document.getElementById('right-zone').addEventListener('touchstart', () => {
+            if(state.skill === 'Invis' && !playerObj.invis) {
+                playerObj.invis = true;
+                setTimeout(() => playerObj.invis = false, 4000);
+            }
+        });
+
+        syncMenu();
+    </script>
+</body>
+</html>
